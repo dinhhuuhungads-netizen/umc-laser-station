@@ -307,8 +307,8 @@ def _parse_log_file(file_path: Path) -> list[dict]:
 
 def _read_tail(file_path: Path, n: int = 200) -> list[dict]:
     """
-    Đọc N dòng cuối file (tail) bằng islice thông minh.
-    Hiệu quả cho file log lớn — chỉ parse phần cuối.
+    Đọc N dòng cuối file (tail) bằng seek từ EOF.
+    [STAB-WARN-1 FIX] Không iterate toàn bộ file — an toàn kể cả file 50MB+.
     """
     try:
         size_mb = file_path.stat().st_size / (1024 * 1024)
@@ -320,20 +320,27 @@ def _read_tail(file_path: Path, n: int = 200) -> list[dict]:
     encodings = ["utf-8", "cp932", "shift_jis", "latin-1"]
     lines = []
 
+    # Đọc tối đa TAIL_CHUNK byte từ EOF — đủ chứa n dòng dài nhất
+    TAIL_CHUNK = CONFIG["MAX_LINE_LENGTH"] * n
+
     for enc in encodings:
         try:
-            with open(file_path, "r", encoding=enc, errors="replace") as fp:
-                # deque(maxlen=n) tự động giữ n dòng cuối — O(n) memory
-                tail_lines = deque(
-                    itertools.islice(
-                        (l for l in fp if len(l) <= CONFIG["MAX_LINE_LENGTH"]),
-                        None
-                    ),
-                    maxlen=n,
-                )
+            with open(file_path, "rb") as fb:
+                file_size = fb.seek(0, 2)           # seek to EOF
+                seek_pos  = max(0, file_size - TAIL_CHUNK)
+                fb.seek(seek_pos)
+                raw_bytes = fb.read()
+            raw_text        = raw_bytes.decode(enc, errors="replace")
+            candidate_lines = raw_text.splitlines(keepends=True)
+            if seek_pos > 0:
+                candidate_lines = candidate_lines[1:]   # dòng đầu bị cắt — bỏ
+            tail_lines = deque(
+                (l for l in candidate_lines if len(l) <= CONFIG["MAX_LINE_LENGTH"]),
+                maxlen=n,
+            )
             lines = list(tail_lines)
             break
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
 
     events = []
@@ -537,6 +544,10 @@ async def _ws_handler(ws: WebSocketServerProtocol) -> None:
     finally:
         async with _ws_lock:
             _connected_clients.discard(ws)
+        # [SEC-WARN-2 FIX] Dọn dẹp rate-limit entry — tránh memory leak
+        with suppress(Exception):
+            if hasattr(_handle_client_message, "_rate"):
+                _handle_client_message._rate.pop(id(ws), None)
         log.info("[WS] Client ngắt kết nối: %s", client_ip)
 
 
@@ -801,15 +812,21 @@ async def _main() -> None:
     ws_host = CONFIG["ws_host"]
     ws_port = CONFIG["ws_port"]
 
-    # [SEC-1 FIX] Lọc Origin — chỉ chấp nhận file:// (null) và localhost
+    # [SEC-1 FIX / K-SEC-1] Lọc Origin — đọc từ UMC_ALLOWED_ORIGINS trong .env
     # "null" là giá trị Origin khi mở file HTML trực tiếp từ ổ đĩa (file://)
-    allowed_origins = [
+    _extra_origins = [
+        o.strip()
+        for o in _env("UMC_ALLOWED_ORIGINS", "").split(",")
+        if o.strip()
+    ]
+    allowed_origins = list(dict.fromkeys([   # dict.fromkeys() giữ thứ tự + dedup
         "null",
         f"http://{ws_host}",
         f"http://{ws_host}:{ws_port}",
         "http://localhost",
         "http://127.0.0.1",
-    ]
+        *_extra_origins,
+    ]))
 
     ws_server = await websockets.serve(
         _ws_handler,
