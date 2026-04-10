@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP: chặn inline script injection từ nguồn ngoài, chỉ cho phép wss:// và ws:// cho connect-src -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src ws: wss:; img-src 'self' data:;">
+<title>UMC LASER STATION — Circuit Feed Monitor v4.1</title>
+<style>
+/* ═══════════════════════════════════════════════════════
+   UMC LASER STATION v4.1 — Light Industrial Theme
+   Zero CDN. Chạy offline hoàn toàn.
+   ═══════════════════════════════════════════════════════ */
+:root {
+  --bg:          #f4f6f9;
+  --bg-panel:    #ffffff;
+  --bg-surface:  #f0f2f5;
+  --bg-inset:    #e8eaee;
+  --border:      #d8dce4;
+  --border-md:   #c2c8d4;
+
+  --blue:        #1a6fd4;
+  --blue-lt:     #e8f0fb;
+  --blue-mid:    #3b8de8;
+
+  --green:       #18a05a;
+  --green-lt:    #e6f7ee;
+  --green-dark:  #12784a;
+
+  --red:         #d63b3b;
+  --red-lt:      #fdeaea;
+  --red-dark:    #a82a2a;
+
+  --amber:       #c87c0a;
+  --amber-lt:    #fef5e6;
+  --amber-mid:   #e8920e;
+
+  --text-1:      #1a1f2e;
+  --text-2:      #4a5568;
+  --text-3:      #8a95a8;
+
+  --font-sans:   'Segoe UI', 'Arial', sans-serif;
+  --font-mono:   'Consolas', 'Courier New', monospace;
+  --r:           8px;
+  --r-sm:        5px;
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md:   0 2px 8px rgba(0,0,0,0.1);
+  --t:           0.2s ease;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* ══ ALERT OVERLAY ══ */
+#alert-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(214,59,59,0.12);
+  pointer-events: none;
+  animation: flashRed 0.45s linear infinite;
+}
+@keyframes flashRed {
+  0%,100% { background: rgba(214,59,59,0.10); }
+  50%      { background: rgba(214,59,59,0.28); }
+}
+#alert-overlay.active { display: block; }
+
+/* ══ APP SHELL ══ */
+#app {
+  position: relative; z-index: 1;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: 52px 1fr;
+  overflow: hidden;
+}
+
+/* ══ HEADER ══ */
+header {
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 18px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.header-logo {
+  display: flex; align-items: center; gap: 10px;
+}
+.logo-badge {
+  width: 34px; height: 34px;
+  background: var(--blue);
+  border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px;
+  color: #fff;
+  flex-shrink: 0;
+}
+.logo-text h1 {
+  font-size: 13px; font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.logo-text small {
+  font-size: 10px; color: var(--text-3);
+  letter-spacing: 0.5px;
+}
+
+.header-motto {
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.header-motto span { color: var(--amber); }
+
+.header-status {
+  display: flex; align-items: center; gap: 14px;
+}
+#clock {
+  font-family: var(--font-mono);
+  font-size: 14px; color: var(--blue);
+  font-weight: 600;
+  letter-spacing: 1px;
+  min-width: 68px;
+}
+#ws-indicator {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  font-weight: 600; color: var(--text-3);
+}
+.dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--border-md);
+  transition: var(--t);
+  flex-shrink: 0;
+}
+.dot.online  { background: var(--green); animation: pulse 2s infinite; }
+.dot.offline { background: var(--red); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ══ NG ALERT BANNER ══ */
+#ng-banner {
+  display: none;
+  padding: 5px 18px;
+  background: var(--red-lt);
+  border-bottom: 2px solid var(--red);
+  color: var(--red-dark);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 1.5px; text-align: center; text-transform: uppercase;
+  animation: flashBanner 0.6s infinite;
+}
+@keyframes flashBanner { 0%,100%{opacity:1} 50%{opacity:0.5} }
+#ng-banner.show { display: block; }
+
+/* ══ MAIN GRID ══ */
+#main-grid {
+  display: grid;
+  grid-template-columns: 258px 1fr 272px;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* ══ PANEL BASE ══ */
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.panel-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--bg-surface);
+}
+.panel-title {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--text-2);
+}
+.panel-body {
+  flex: 1; overflow-y: auto; padding: 12px;
+  scrollbar-width: thin; scrollbar-color: var(--border-md) transparent;
+}
+
+/* ══ LEFT PANEL ══ */
+#panel-left {
+  display: flex; flex-direction: column; gap: 8px;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 8px;
+}
+#panel-left::-webkit-scrollbar { width: 4px; }
+#panel-left::-webkit-scrollbar-thumb { background: var(--border-md); border-radius: 2px; }
+
+/* ── CARD WRAPPER ── */
+.lcard {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px;
+  box-shadow: var(--shadow-sm);
+}
+.lcard-title {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--text-2);
+  margin-bottom: 10px;
+  display: flex; align-items: center; gap: 6px;
+}
+.lcard-title .icon {
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  background: var(--blue-lt);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  color: var(--blue);
+}
+.lcard-title .icon.amber { background: var(--amber-lt); color: var(--amber); }
+
+/* ── POKA-YOKE ── */
+.scan-row {
+  display: flex; gap: 6px; margin-bottom: 8px;
+}
+#scan-input {
+  flex: 1;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+  letter-spacing: 0.5px;
+  transition: border-color var(--t), box-shadow var(--t);
+}
+#scan-input:focus  { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,111,212,0.12); }
+#scan-input.valid  { border-color: var(--green); box-shadow: 0 0 0 3px rgba(24,160,90,0.12); }
+#scan-input.invalid{ border-color: var(--red);   box-shadow: 0 0 0 3px rgba(214,59,59,0.12); animation: shake .4s; }
+@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+
+#btn-scan {
+  padding: 7px 13px;
+  background: var(--blue);
+  border: none; border-radius: var(--r-sm);
+  color: #fff; font-size: 11px; font-weight: 700;
+  letter-spacing: 1px; cursor: pointer;
+  transition: var(--t); white-space: nowrap;
+}
+#btn-scan:hover { background: var(--blue-mid); }
+#btn-scan:active { transform: scale(0.97); }
+
+#scan-result {
+  padding: 8px 10px; border-radius: var(--r-sm);
+  font-family: var(--font-mono); font-size: 11px;
+  min-height: 34px; display: flex; align-items: center;
+  border: 1.5px solid transparent;
+  transition: var(--t);
+  margin-bottom: 8px;
+}
+#scan-result.ok   { background: var(--green-lt);  border-color: #a3d9be; color: var(--green-dark); }
+#scan-result.fail { background: var(--red-lt);    border-color: #f0aaa8; color: var(--red-dark); }
+#scan-result.idle { color: var(--text-3); border-color: var(--border); background: var(--bg-surface); }
+
+/* Board color swatches */
+.swatch-label {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 1.5px; color: var(--text-3);
+  text-transform: uppercase; margin-bottom: 6px;
+}
+.board-preview-row {
+  display: flex; gap: 5px; margin-bottom: 8px;
+}
+.board-swatch {
+  flex: 1; border-radius: var(--r-sm); padding: 6px 4px;
+  border: 2px solid var(--border);
+  cursor: pointer; transition: var(--t);
+  text-align: center;
+}
+.board-swatch:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.board-swatch.selected { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(26,111,212,0.2); }
+.board-swatch-inner {
+  width: 100%; height: 28px; border-radius: 3px;
+  margin-bottom: 4px; overflow: hidden;
+}
+.board-swatch span { font-size: 9px; font-weight: 600; color: var(--text-3); letter-spacing: 0.5px; }
+.board-swatch.selected span { color: var(--blue); }
+
+/* Models list */
+.models-list { display: flex; flex-direction: column; gap: 3px; }
+.model-tag {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 8px; border-radius: 4px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-2);
+  font-weight: 600;
+}
+.model-tag .dot-sm {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.model-tag.grn .dot-sm { background: var(--green); }
+.model-tag.blu .dot-sm { background: var(--blue); }
+.model-tag.blk .dot-sm { background: var(--text-3); }
+
+/* ── REFILL COUNTDOWN ── */
+.refill-display {
+  background: var(--amber-lt);
+  border: 1.5px solid #f5d08a;
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  text-align: center; margin-bottom: 8px;
+}
+#refill-time {
+  font-family: var(--font-mono);
+  font-size: 26px; font-weight: 700;
+  color: var(--amber);
+  letter-spacing: 3px;
+  line-height: 1;
+}
+#refill-label { font-size: 9px; color: var(--amber); opacity: 0.75; letter-spacing: 1.5px; margin-top: 3px; }
+
+.refill-bar-bg {
+  width: 100%; height: 6px;
+  background: var(--bg-inset);
+  border-radius: 3px; overflow: hidden; margin-bottom: 8px;
+}
+#refill-bar {
+  height: 100%;
+  background: var(--amber-mid);
+  border-radius: 3px;
+  transition: width 1s linear;
+}
+.refill-params { display: flex; gap: 6px; }
+.refill-param {
+  flex: 1;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 6px;
+  text-align: center;
+}
+.refill-param label { display: block; font-size: 8px; font-weight: 700; color: var(--text-3); letter-spacing: 1px; margin-bottom: 3px; text-transform: uppercase; }
+.refill-param input {
+  width: 100%; background: transparent; border: none;
+  color: var(--amber); font-family: var(--font-mono); font-size: 14px;
+  text-align: center; outline: none; font-weight: 700;
+}
+
+/* ── Connection bar ── */
+#conn-bar {
+  padding: 8px;
+  display: flex; align-items: center; gap: 6px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+#ws-url-input {
+  flex: 1;
+  background: var(--bg-panel); border: 1.5px solid var(--border);
+  border-radius: var(--r-sm); color: var(--text-1);
+  font-family: var(--font-mono); font-size: 10px;
+  padding: 5px 8px; outline: none; transition: var(--t);
+}
+#ws-url-input:focus { border-color: var(--blue); }
+#btn-connect {
+  padding: 5px 12px;
+  background: var(--blue-lt); border: 1.5px solid var(--blue);
+  border-radius: var(--r-sm); color: var(--blue);
+  font-size: 10px; font-weight: 700; letter-spacing: 1px; cursor: pointer;
+  transition: var(--t); white-space: nowrap;
+}
+#btn-connect:hover { background: var(--blue); color: #fff; }
+#btn-connect.disconnect { border-color: var(--red); color: var(--red); background: var(--red-lt); }
+#btn-connect.disconnect:hover { background: var(--red); color: #fff; }
+
+/* ══ CENTER PANEL ══ */
+.stats-row {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 6px; padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.stat-card {
+  background: var(--bg-panel);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-sm); padding: 8px 6px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+.stat-card .stat-val {
+  font-family: var(--font-mono); font-size: 22px; font-weight: 700;
+  line-height: 1; margin-bottom: 2px;
+}
+.stat-card .stat-label {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-3);
+}
+.stat-ok   .stat-val { color: var(--green); }
+.stat-ng   .stat-val { color: var(--red); }
+.stat-rate .stat-val { color: var(--amber); }
+.stat-cyc  .stat-val { color: var(--blue); }
+
+/* ── CHART ── */
+#chart-area {
+  padding: 8px 10px;
+  flex: 0 0 152px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+#chart-canvas { width: 100%; height: 132px; }
+
+/* ── EVENT LOG ── */
+.log-header {
+  display: grid;
+  grid-template-columns: 128px 76px 138px 54px 60px;
+  gap: 4px; padding: 5px 8px;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 1.5px; color: var(--text-3);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+#event-log-body {
+  flex: 1; overflow-y: auto; padding: 4px 6px;
+  scrollbar-width: thin; scrollbar-color: var(--border-md) transparent;
+}
+#event-log-body::-webkit-scrollbar { width: 4px; }
+#event-log-body::-webkit-scrollbar-thumb { background: var(--border-md); border-radius: 2px; }
+
+.log-row {
+  display: grid;
+  grid-template-columns: 128px 76px 138px 54px 60px;
+  gap: 4px; align-items: center;
+  padding: 5px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono); font-size: 10px;
+  border-bottom: 1px solid transparent;
+  border-left: 3px solid transparent;
+  transition: background var(--t);
+  margin-bottom: 1px;
+}
+.log-row:hover { background: var(--bg-surface); }
+.log-row.ok    { border-left-color: var(--green); }
+.log-row.ng    { border-left-color: var(--red);   background: var(--red-lt); }
+.log-row.error { border-left-color: var(--amber); background: var(--amber-lt); }
+
+.log-ts    { color: var(--text-3); }
+.log-line  { color: var(--blue); font-weight: 600; }
+.log-model { color: var(--text-1); font-weight: 600; }
+.log-result { font-weight: 700; text-align: center; }
+.log-result.ok    { color: var(--green); }
+.log-result.ng    { color: var(--red);   animation: blink .7s 3; }
+.log-result.error { color: var(--amber); }
+.log-cycle { color: var(--text-3); text-align: right; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+
+/* ══ RIGHT PANEL — AGV MAP ══ */
+#agv-canvas-wrap {
+  flex: 1; position: relative; overflow: hidden; min-height: 180px;
+  background: var(--bg-surface);
+}
+#agv-canvas { width: 100%; height: 100%; display: block; }
+
+.agv-legend {
+  padding: 7px 12px;
+  display: flex; gap: 12px; flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.legend-item {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 10px; color: var(--text-2); font-weight: 600;
+}
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── Scrollbar global ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-md); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div id="alert-overlay"></div>
+
+<div id="app">
+
+  <!-- ══ HEADER ══ -->
+  <header>
+    <div class="header-logo">
+      <div class="logo-badge">⚡</div>
+      <div class="logo-text">
+        <h1>UMC Laser Station</h1>
+        <small>Circuit Feed Monitor v4.1.0 — UMC Vietnam</small>
+      </div>
+    </div>
+    <div class="header-motto">
+      <span>Quality First — Zero Defect Strategy</span>
+    </div>
+    <div class="header-status">
+      <div id="ws-indicator">
+        <div class="dot offline" id="ws-dot"></div>
+        <span id="ws-status-text">OFFLINE</span>
+      </div>
+      <div id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <!-- NG Alert Banner -->
+  <div id="ng-banner">⚠ CẢNH BÁO: NG RATE VƯỢT NGƯỠNG — KIỂM TRA NGAY!</div>
+
+  <!-- ══ MAIN GRID ══ -->
+  <div id="main-grid">
+
+    <!-- ═ LEFT PANEL ═ -->
+    <div id="panel-left">
+
+      <!-- POKA-YOKE -->
+      <div class="lcard">
+        <div class="lcard-title">
+          <div class="icon">🛡</div>
+          Poka-Yoke — QC Scan
+        </div>
+
+        <div class="scan-row">
+          <input id="scan-input" type="text" placeholder="Quét / nhập mã Model..."
+                 autocomplete="off" spellcheck="false" maxlength="30">
+          <button id="btn-scan">SCAN</button>
+        </div>
+
+        <div id="scan-result" class="idle">Chờ quét mã Model...</div>
+
+        <div class="swatch-label">Màu bản mạch tham chiếu</div>
+        <div class="board-preview-row" id="board-swatches">
+          <div class="board-swatch" data-color="GRN" onclick="selectColor('GRN',this)">
+            <div class="board-swatch-inner" style="background:linear-gradient(135deg,#2d7a45,#3da85e);"></div>
+            <span>XANH LÁ</span>
+          </div>
+          <div class="board-swatch" data-color="BLU" onclick="selectColor('BLU',this)">
+            <div class="board-swatch-inner" style="background:linear-gradient(135deg,#1a4fa0,#2567c8);"></div>
+            <span>XANH DƯƠNG</span>
+          </div>
+          <div class="board-swatch" data-color="BLK" onclick="selectColor('BLK',this)">
+            <div class="board-swatch-inner" style="background:linear-gradient(135deg,#2c2c2e,#444446);"></div>
+            <span>ĐEN</span>
+          </div>
+        </div>
+
+        <div class="swatch-label" style="margin-top:6px;">Models hợp lệ</div>
+        <div class="models-list" id="valid-models-list"></div>
+      </div>
+
+      <!-- REFILL COUNTDOWN -->
+      <div class="lcard">
+        <div class="lcard-title">
+          <div class="icon amber">⏱</div>
+          Refill Countdown
+        </div>
+        <div class="refill-display">
+          <div id="refill-time">--:--</div>
+          <div id="refill-label">THỜI GIAN NẠP MẠCH CÒN LẠI</div>
+        </div>
+        <div class="refill-bar-bg">
+          <div id="refill-bar" style="width:100%"></div>
+        </div>
+        <div class="refill-params">
+          <div class="refill-param">
+            <label>Số mạch / Tray</label>
+            <input id="boards-per-tray" type="number" value="50" min="1" max="500" oninput="recalcRefill()">
+          </div>
+          <div class="refill-param">
+            <label>Thời gian Laser (s)</label>
+            <input id="cycle-sec" type="number" value="8" min="1" max="120" step="0.5" oninput="recalcRefill()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Connection bar -->
+      <div id="conn-bar" class="lcard" style="padding:0;overflow:hidden;">
+        <div style="padding:8px;display:flex;gap:6px;align-items:center;">
+          <input id="ws-url-input" type="text" value="ws://localhost:8765" spellcheck="false">
+          <button id="btn-connect" onclick="toggleConnection()">KẾT NỐI</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═ CENTER PANEL ═ -->
+    <div class="panel" id="panel-center" style="overflow:hidden;display:flex;flex-direction:column;">
+
+      <!-- Stats row -->
+      <div class="stats-row">
+        <div class="stat-card stat-ok">
+          <div class="stat-val" id="stat-ok">0</div>
+          <div class="stat-label">OK</div>
+        </div>
+        <div class="stat-card stat-ng">
+          <div class="stat-val" id="stat-ng">0</div>
+          <div class="stat-label">NG</div>
+        </div>
+        <div class="stat-card stat-rate">
+          <div class="stat-val" id="stat-rate">0.0%</div>
+          <div class="stat-label">NG Rate</div>
+        </div>
+        <div class="stat-card stat-cyc">
+          <div class="stat-val" id="stat-cyc">–</div>
+          <div class="stat-label">Cycle (s)</div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div id="chart-area">
+        <canvas id="chart-canvas"></canvas>
+      </div>
+
+      <!-- Log header -->
+      <div class="log-header">
+        <span>Timestamp</span>
+        <span>Line</span>
+        <span>Model</span>
+        <span>Result</span>
+        <span style="text-align:right">Cycle</span>
+      </div>
+
+      <!-- Event log -->
+      <div id="event-log-body"></div>
+    </div>
+
+    <!-- ═ RIGHT PANEL — AGV MAP ═ -->
+    <div class="panel" id="panel-right" style="display:flex;flex-direction:column;">
+      <div class="panel-header">
+        <span class="panel-title">AGV 3D Simulation Map</span>
+        <span id="agv-count" style="font-size:9px;color:var(--text-3);font-family:var(--font-mono);font-weight:600;">AGVs: 0</span>
+      </div>
+      <div id="agv-canvas-wrap">
+        <canvas id="agv-canvas"></canvas>
+      </div>
+      <div class="agv-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#1a6fd4"></div>Di chuyển</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#18a05a"></div>Đang nạp</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#c87c0a"></div>Kho</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#d63b3b"></div>Trạm Laser</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ JAVASCRIPT — ZERO CDN, 100% logic giữ nguyên ══ -->
+<script>
+'use strict';
+
+/* ─── XSS GUARD — escape tất cả giá trị từ WebSocket trước khi đưa vào DOM ─── */
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/* ─── STATE ─── */
+const State = {
+  ws:            null,
+  connected:     false,
+  stats:         { total_ok: 0, total_ng: 0, total_error: 0, ng_rate_pct: 0 },
+  config:        { laser_cycle_sec: 8, ng_threshold_pct: 3.0, valid_models: [] },
+  selectedColor: '',
+  eventLog:      [],
+  chartData:     [],
+  refillTotal:   0,
+  refillRemain:  0,
+  refillTimer:   null,
+  audioCtx:      null,
+  alertActive:   false,
+  reconnectTimer: null,
+};
+
+/* ─── DOM REFS ─── */
+const $ = id => document.getElementById(id);
+const dom = {
+  wsIndicator: $('ws-indicator'),
+  wsDot:       $('ws-dot'),
+  wsStatus:    $('ws-status-text'),
+  clock:       $('clock'),
+  scanInput:   $('scan-input'),
+  scanResult:  $('scan-result'),
+  alertOverlay:$('alert-overlay'),
+  ngBanner:    $('ng-banner'),
+  statOk:      $('stat-ok'),
+  statNg:      $('stat-ng'),
+  statRate:    $('stat-rate'),
+  statCyc:     $('stat-cyc'),
+  eventLog:    $('event-log-body'),
+  chartCanvas: $('chart-canvas'),
+  agvCanvas:   $('agv-canvas'),
+  agvCount:    $('agv-count'),
+  refillTime:  $('refill-time'),
+  refillBar:   $('refill-bar'),
+  boardsInput: $('boards-per-tray'),
+  cycleInput:  $('cycle-sec'),
+  validModels: $('valid-models-list'),
+  connBtn:     $('btn-connect'),
+};
+
+/* ─── CLOCK ─── */
+function tickClock() {
+  dom.clock.textContent = new Date().toTimeString().slice(0, 8);
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+/* ─── WEBSOCKET ─── */
+function toggleConnection() {
+  State.connected ? disconnect() : connect();
+}
+
+function connect() {
+  const url = $('ws-url-input').value.trim();
+  if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+    alert('URL không hợp lệ. Phải bắt đầu bằng ws:// hoặc wss://');
+    return;
+  }
+  // Cảnh báo nếu đang dùng ws:// (không mã hoá) trên trang HTTPS
+  if (url.startsWith('ws://') && location.protocol === 'https:') {
+    alert('⚠ Trang đang chạy HTTPS nhưng WS URL dùng ws:// (không mã hoá).\nTrình duyệt sẽ chặn kết nối này.\nDùng wss:// thay thế.');
+    return;
+  }
+  try { State.ws = new WebSocket(url); }
+  catch(e) { setWsStatus(false); return; }
+
+  State.ws.onopen = () => {
+    clearTimeout(State.reconnectTimer);
+    State.connected = true;
+    setWsStatus(true);
+  };
+  State.ws.onmessage = (e) => {
+    try { handleMessage(JSON.parse(e.data)); } catch(_) {}
+  };
+  State.ws.onclose = () => {
+    State.connected = false;
+    setWsStatus(false);
+    State.reconnectTimer = setTimeout(connect, 5000);
+  };
+  State.ws.onerror = () => { State.connected = false; setWsStatus(false); };
+}
+
+function disconnect() {
+  clearTimeout(State.reconnectTimer);
+  if (State.ws) { State.ws.close(); State.ws = null; }
+  State.connected = false;
+  setWsStatus(false);
+}
+
+function wsSend(obj) {
+  if (State.ws && State.ws.readyState === WebSocket.OPEN) {
+    State.ws.send(JSON.stringify(obj));
+  }
+}
+
+function setWsStatus(online) {
+  dom.wsDot.className      = 'dot ' + (online ? 'online' : 'offline');
+  dom.wsStatus.textContent = online ? 'ONLINE' : 'OFFLINE';
+  dom.connBtn.textContent  = online ? 'NGẮT KẾT NỐI' : 'KẾT NỐI';
+  dom.connBtn.className    = online ? 'disconnect' : '';
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case 'snapshot':
+      if (msg.config) State.config = { ...State.config, ...msg.config };
+      if (msg.stats)  updateStats(msg.stats);
+      if (msg.events) msg.events.forEach(addEventRow);
+      renderValidModels();
+      break;
+    case 'new_event':
+      if (msg.stats)  updateStats(msg.stats);
+      if (msg.event)  addEventRow(msg.event);
+      msg.alert ? triggerNgAlert() : clearAlert();
+      break;
+    case 'heartbeat':
+      if (msg.stats) updateStats(msg.stats);
+      break;
+    case 'model_validation':
+      showScanResult(msg.valid, msg.message, msg.model);
+      break;
+    case 'pong': break;
+  }
+}
+
+/* ─── STATS ─── */
+function updateStats(s) {
+  State.stats = s;
+  dom.statOk.textContent   = s.total_ok   ?? 0;
+  dom.statNg.textContent   = s.total_ng   ?? 0;
+  dom.statRate.textContent = (s.ng_rate_pct ?? 0).toFixed(1) + '%';
+  State.chartData.push(s.ng_rate_pct ?? 0);
+  if (State.chartData.length > 60) State.chartData.shift();
+  drawChart();
+}
+
+/* ─── EVENT LOG ─── */
+function addEventRow(ev) {
+  const result = (ev.result || '').toUpperCase();
+  const cls    = result === 'OK' ? 'ok' : result === 'NG' ? 'ng' : 'error';
+  if (ev.cycle) dom.statCyc.textContent = ev.cycle.toFixed(1);
+  updateRefillOnEvent();
+
+  const row = document.createElement('div');
+  row.className = `log-row ${cls}`;
+  row.innerHTML = `
+    <span class="log-ts">${escapeHtml(ev.ts)}</span>
+    <span class="log-line">${escapeHtml((ev.line || '').slice(0, 12))}</span>
+    <span class="log-model">${escapeHtml(ev.model)}</span>
+    <span class="log-result ${cls}">${escapeHtml(result)}</span>
+    <span class="log-cycle">${ev.cycle ? escapeHtml(ev.cycle.toFixed(1)) + 's' : '–'}</span>
+  `;
+  dom.eventLog.insertBefore(row, dom.eventLog.firstChild);
+  while (dom.eventLog.children.length > 200) {
+    dom.eventLog.removeChild(dom.eventLog.lastChild);
+  }
+}
+
+/* ─── CHART (Zero CDN Canvas) ─── */
+function drawChart() {
+  const canvas = dom.chartCanvas;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth;
+  const h = canvas.offsetHeight;
+  if (w <= 0 || h <= 0) return;
+  canvas.width  = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const data = State.chartData;
+  if (data.length < 2) {
+    ctx.strokeStyle = '#d8dce4';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+    return;
+  }
+
+  const threshold = State.config.ng_threshold_pct || 3;
+  const maxVal    = Math.max(...data, threshold * 1.5, 5);
+
+  // Grid lines
+  ctx.strokeStyle = '#e8eaee';
+  ctx.lineWidth = 1; ctx.setLineDash([]);
+  for (let i = 0; i <= 4; i++) {
+    const y = (h / 4) * i;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  // Threshold line
+  const ty = h - (threshold / maxVal) * h;
+  ctx.strokeStyle = '#e8920e';
+  ctx.lineWidth = 1; ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(0, ty); ctx.lineTo(w, ty); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const step = w / (data.length - 1);
+
+  // Fill
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(24,160,90,0.18)');
+  grad.addColorStop(1, 'rgba(24,160,90,0.01)');
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  data.forEach((v, i) => ctx.lineTo(i * step, h - (v / maxVal) * h));
+  ctx.lineTo(w, h);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#18a05a';
+  data.forEach((v, i) => {
+    const x = i * step;
+    const y = h - (v / maxVal) * h;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Threshold label
+  ctx.fillStyle = '#c87c0a';
+  ctx.font = 'bold 9px Segoe UI, Arial';
+  ctx.fillText(`▶ NG Threshold ${threshold}%`, 4, ty - 3);
+}
+
+/* ─── POKA-YOKE ─── */
+$('btn-scan').addEventListener('click', doScan);
+dom.scanInput.addEventListener('keydown', e => { if (e.key === 'Enter') doScan(); });
+
+function doScan() {
+  const code = dom.scanInput.value.trim().toUpperCase();
+  if (!code) return;
+  if (State.connected) {
+    wsSend({ type: 'validate_model', model: code });
+  } else {
+    const valid = State.config.valid_models.includes(code);
+    showScanResult(valid,
+      valid ? `✅ Model hợp lệ` : `❌ Model '${code}' KHÔNG HỢP LỆ!`,
+      code
+    );
+  }
+}
+
+function showScanResult(valid, message, model) {
+  dom.scanResult.className   = valid ? 'ok' : 'fail';
+  dom.scanResult.textContent = message;
+  dom.scanInput.className    = valid ? 'valid' : 'invalid';
+  if (!valid) {
+    triggerPokaYokeAlert();
+  } else {
+    clearAlert();
+    setTimeout(() => {
+      dom.scanInput.className = '';
+      dom.scanInput.value     = '';
+      dom.scanInput.focus();
+    }, 1500);
+  }
+}
+
+function selectColor(code, el) {
+  State.selectedColor = code;
+  document.querySelectorAll('.board-swatch').forEach(s => s.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function renderValidModels() {
+  const models = State.config.valid_models;
+  if (!models || !models.length) return;
+  dom.validModels.innerHTML = models.map(m => {
+    const safe = escapeHtml(m);
+    const cls = m.includes('GRN') ? 'grn' : m.includes('BLU') ? 'blu' : 'blk';
+    return `<div class="model-tag ${cls}"><div class="dot-sm"></div>${safe}</div>`;
+  }).join('');
+}
+
+State.config.valid_models = [
+  'PCB-UMC-V54-GRN','PCB-UMC-V54-BLU','PCB-UMC-V54-BLK',
+  'PCB-UMC-V55-GRN','PCB-UMC-V55-BLU',
+];
+renderValidModels();
+
+/* ─── ALERTS — Web Audio + Visual ─── */
+function getAudioCtx() {
+  if (!State.audioCtx) {
+    try { State.audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(_) {}
+  }
+  return State.audioCtx;
+}
+
+function playAlarmSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  [0, 0.25, 0.5].forEach(offset => {
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sawtooth';
+    const start = ctx.currentTime + offset;
+    osc.frequency.setValueAtTime(880, start);
+    osc.frequency.linearRampToValueAtTime(440, start + 0.2);
+    gain.gain.setValueAtTime(0.4, start);
+    gain.gain.linearRampToValueAtTime(0, start + 0.22);
+    osc.start(start); osc.stop(start + 0.22);
+  });
+}
+
+function triggerPokaYokeAlert() {
+  State.alertActive = true;
+  dom.alertOverlay.classList.add('active');
+  playAlarmSound();
+  setTimeout(() => { dom.alertOverlay.classList.remove('active'); State.alertActive = false; }, 3000);
+}
+
+function triggerNgAlert() {
+  dom.ngBanner.classList.add('show');
+  dom.alertOverlay.classList.add('active');
+  if (!State.alertActive) { playAlarmSound(); State.alertActive = true; }
+}
+
+function clearAlert() {
+  dom.ngBanner.classList.remove('show');
+  dom.alertOverlay.classList.remove('active');
+  State.alertActive = false;
+}
+
+/* ─── REFILL COUNTDOWN ─── */
+function recalcRefill() {
+  const boards = parseInt(dom.boardsInput.value) || 50;
+  const cycle  = parseFloat(dom.cycleInput.value) || 8;
+  State.refillTotal  = boards * cycle;
+  State.refillRemain = State.refillTotal;
+  renderRefill();
+}
+
+function updateRefillOnEvent() {
+  if (State.refillTotal <= 0) recalcRefill();
+  const cycle = parseFloat(dom.cycleInput.value) || 8;
+  State.refillRemain = Math.max(0, State.refillRemain - cycle);
+  if (State.refillRemain <= 0) {
+    State.refillRemain = State.refillTotal;
+    playAlarmSound();
+  }
+  renderRefill();
+}
+
+function renderRefill() {
+  const remain = State.refillRemain;
+  const total  = State.refillTotal || 1;
+  const pct    = (remain / total) * 100;
+  const m = Math.floor(remain / 60).toString().padStart(2, '0');
+  const s = Math.floor(remain % 60).toString().padStart(2, '0');
+  dom.refillTime.textContent = `${m}:${s}`;
+  dom.refillBar.style.width  = pct + '%';
+  dom.refillBar.style.background = pct < 20
+    ? '#d63b3b'
+    : pct < 50
+      ? '#c87c0a'
+      : '#18a05a';
+}
+
+recalcRefill();
+setInterval(renderRefill, 1000);
+
+/* ─── AGV 3D MAP — Canvas 2D Isometric ─── */
+const AGV = (() => {
+  const canvas = dom.agvCanvas;
+  let ctx, W, H, frame;
+
+  const WAREHOUSE = { name: 'KHO', gx: 1, gy: 1 };
+  const STATIONS  = [
+    { name: 'L-01', gx: 7, gy: 1 },
+    { name: 'L-02', gx: 7, gy: 3 },
+    { name: 'L-03', gx: 7, gy: 5 },
+  ];
+  const AGVS = [
+    { id: 'AGV-1', px: 0, py: 0, tx: 0, ty: 0, state: 'idle', color: '#1a6fd4', progress: 0, payload: false },
+    { id: 'AGV-2', px: 0, py: 0, tx: 0, ty: 0, state: 'idle', color: '#3b8de8', progress: 0, payload: false },
+    { id: 'AGV-3', px: 0, py: 0, tx: 0, ty: 0, state: 'idle', color: '#63a8f0', progress: 0, payload: false },
+  ];
+
+  const CELL = 40, COLS = 9, ROWS = 7;
+  const ISO_ANGLE = Math.PI / 6;
+
+  function isoX(gx, gy, cx) { return cx + (gx - gy) * (CELL * Math.cos(ISO_ANGLE)); }
+  function isoY(gx, gy, cy) { return cy + (gx + gy) * (CELL * Math.sin(ISO_ANGLE)) * 0.5; }
+
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr  = window.devicePixelRatio || 1;
+    W = rect.width; H = rect.height;
+    canvas.width  = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+  }
+
+  function drawTile(gx, gy, fill, cx, cy) {
+    const x = isoX(gx, gy, cx), y = isoY(gx, gy, cy);
+    const hw = CELL * Math.cos(ISO_ANGLE);
+    const hh = CELL * Math.sin(ISO_ANGLE) * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y - hh); ctx.lineTo(x + hw, y);
+    ctx.lineTo(x, y + hh); ctx.lineTo(x - hw, y);
+    ctx.closePath();
+    ctx.fillStyle = fill; ctx.fill();
+    ctx.strokeStyle = 'rgba(200,208,220,0.6)';
+    ctx.lineWidth = 0.5; ctx.stroke();
+  }
+
+  function drawBox(gx, gy, h, topColor, sideColor, cx, cy) {
+    const x = isoX(gx, gy, cx), y = isoY(gx, gy, cy);
+    const hw = CELL * Math.cos(ISO_ANGLE) * 0.7;
+    const hh = CELL * Math.sin(ISO_ANGLE) * 0.5 * 0.7;
+    // Top
+    ctx.beginPath();
+    ctx.moveTo(x, y - hh - h); ctx.lineTo(x + hw, y - h);
+    ctx.lineTo(x, y + hh - h); ctx.lineTo(x - hw, y - h);
+    ctx.closePath();
+    ctx.fillStyle = topColor; ctx.fill();
+    // Right side
+    ctx.beginPath();
+    ctx.moveTo(x + hw, y - h); ctx.lineTo(x, y + hh - h);
+    ctx.lineTo(x, y + hh);    ctx.lineTo(x + hw, y);
+    ctx.closePath();
+    ctx.fillStyle = sideColor; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+    ctx.lineWidth = 0.5; ctx.stroke();
+  }
+
+  function drawAgv(agv, cx, cy) {
+    const gx = agv.px + (agv.tx - agv.px) * agv.progress;
+    const gy = agv.py + (agv.ty - agv.py) * agv.progress;
+    const x  = isoX(gx, gy, cx), y = isoY(gx, gy, cy);
+    const r  = CELL * 0.22;
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = agv.color + 'dd'; ctx.fill();
+    ctx.strokeStyle = agv.color; ctx.lineWidth = 1.5; ctx.stroke();
+
+    if (agv.payload) {
+      ctx.fillStyle = '#c87c0a';
+      ctx.fillRect(x - 4, y - r - 7, 8, 5);
+    }
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.round(CELL * 0.15)}px Consolas, monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(agv.id, x, y - r - 1);
+  }
+
+  function assignNewTask(agv) {
+    if (Math.random() < 0.5) {
+      agv.px = WAREHOUSE.gx; agv.py = WAREHOUSE.gy;
+      const st = STATIONS[Math.floor(Math.random() * STATIONS.length)];
+      agv.tx = st.gx; agv.ty = st.gy;
+      agv.state = 'moving_to_station'; agv.payload = true;
+    } else {
+      const st = STATIONS[Math.floor(Math.random() * STATIONS.length)];
+      agv.px = st.gx; agv.py = st.gy;
+      agv.tx = WAREHOUSE.gx; agv.ty = WAREHOUSE.gy;
+      agv.state = 'returning'; agv.payload = false;
+    }
+    agv.progress = 0;
+  }
+
+  AGVS.forEach((agv, i) => {
+    agv.px = WAREHOUSE.gx + i * 0.5;
+    agv.py = WAREHOUSE.gy;
+    assignNewTask(agv);
+  });
+
+  let lastTs = 0;
+  function tick(ts) {
+    const dt = Math.min((ts - lastTs) / 1000, 0.1);
+    lastTs = ts;
+    AGVS.forEach(agv => {
+      agv.progress += dt * 0.3;
+      if (agv.progress >= 1) {
+        agv.progress = 1;
+        if (agv.state === 'moving_to_station') {
+          agv.state = 'loading';
+          setTimeout(() => assignNewTask(agv), 800 + Math.random() * 1200);
+        } else {
+          assignNewTask(agv);
+        }
+      }
+    });
+    draw();
+    frame = requestAnimationFrame(tick);
+  }
+
+  function draw() {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, W, H);
+
+    const cx = W * 0.38, cy = H * 0.22;
+
+    // Floor grid
+    for (let gx = 0; gx < COLS; gx++) {
+      for (let gy = 0; gy < ROWS; gy++) {
+        const isWH = gx === WAREHOUSE.gx && gy === WAREHOUSE.gy;
+        const isSt = STATIONS.some(s => s.gx === gx && s.gy === gy);
+        let color = 'rgba(230,234,240,0.9)';
+        if (isWH) color = 'rgba(254,245,230,0.95)';
+        if (isSt) color = 'rgba(253,234,234,0.95)';
+        drawTile(gx, gy, color, cx, cy);
+      }
+    }
+
+    // Warehouse box
+    drawBox(WAREHOUSE.gx, WAREHOUSE.gy, 14, '#fde9b0', '#f0ce78', cx, cy);
+    const whx = isoX(WAREHOUSE.gx, WAREHOUSE.gy, cx);
+    const why = isoY(WAREHOUSE.gx, WAREHOUSE.gy, cy);
+    ctx.fillStyle = '#c87c0a'; ctx.font = `bold ${Math.round(CELL * 0.18)}px Consolas, monospace`;
+    ctx.textAlign = 'center'; ctx.fillText('KHO', whx, why - 18);
+
+    // Laser stations
+    STATIONS.forEach(st => {
+      drawBox(st.gx, st.gy, 18, '#ffd6d6', '#f0aaaa', cx, cy);
+      const sx = isoX(st.gx, st.gy, cx);
+      const sy = isoY(st.gx, st.gy, cy);
+      ctx.fillStyle = '#d63b3b'; ctx.font = `bold ${Math.round(CELL * 0.18)}px Consolas, monospace`;
+      ctx.textAlign = 'center'; ctx.fillText(st.name, sx, sy - 24);
+      // Laser beam
+      const t = Date.now() / 800;
+      const alpha = (Math.sin(t + st.gx) + 1) / 2 * 0.5;
+      ctx.strokeStyle = `rgba(214,59,59,${alpha + 0.2})`;
+      ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 24); ctx.lineTo(sx, sy - 38 - alpha * 12);
+      ctx.stroke(); ctx.setLineDash([]);
+    });
+
+    // AGV paths
+    AGVS.forEach(agv => {
+      const x1 = isoX(agv.px, agv.py, cx), y1 = isoY(agv.px, agv.py, cy);
+      const x2 = isoX(agv.tx, agv.ty, cx), y2 = isoY(agv.tx, agv.ty, cy);
+      ctx.strokeStyle = agv.color + '30';
+      ctx.lineWidth = 1; ctx.setLineDash([3, 5]);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+
+    AGVS.forEach(agv => drawAgv(agv, cx, cy));
+    dom.agvCount.textContent = `AGVs: ${AGVS.length} hoạt động`;
+  }
+
+  function start() {
+    resize();
+    new ResizeObserver(resize).observe(canvas.parentElement);
+    frame = requestAnimationFrame(tick);
+  }
+  return { start };
+})();
+
+/* ─── DEMO MODE — offline simulation ─── */
+(function startOfflineDemo() {
+  let ok = 0, ng = 0;
+  const models  = State.config.valid_models;
+  const results = Array(19).fill('OK').concat(['NG']);
+
+  setInterval(() => {
+    if (State.connected) return;
+    const model  = models[Math.floor(Math.random() * models.length)];
+    const result = results[Math.floor(Math.random() * results.length)];
+    const cycle  = +(Math.random() * 2 + 7).toFixed(1);
+    if (result === 'OK') ok++; else ng++;
+    const total  = ok + ng;
+    const ngRate = total > 0 ? ng / total * 100 : 0;
+    addEventRow({ ts: new Date().toLocaleString('vi-VN'), line: 'demo' + Math.floor(Math.random()*3+1), model, result, cycle, source: 'demo' });
+    updateStats({ total_ok: ok, total_ng: ng, total_error: 0, ng_rate_pct: +ngRate.toFixed(2) });
+    updateRefillOnEvent();
+    if (ngRate >= (State.config.ng_threshold_pct || 3) && total >= 10) triggerNgAlert();
+    else if (result !== 'NG') clearAlert();
+  }, (parseFloat(dom.cycleInput.value) || 8) * 1000);
+})();
+
+/* ─── INIT ─── */
+window.addEventListener('load', () => {
+  AGV.start();
+  drawChart();
+  dom.scanInput.focus();
+  if ($('ws-url-input').value) setTimeout(connect, 800);
+});
+window.addEventListener('resize', drawChart);
+</script>
+</body>
+</html>
