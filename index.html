@@ -786,7 +786,14 @@ function setWsStatus(online) {
 function handleMessage(msg) {
   switch (msg.type) {
     case 'snapshot':
-      if (msg.config) State.config = { ...State.config, ...msg.config };
+      if (msg.config) {
+        State.config = { ...State.config, ...msg.config };
+        // Đồng bộ input hiển thị với chu kỳ thực từ server
+        if (msg.config.laser_cycle_sec) {
+          dom.cycleInput.value = msg.config.laser_cycle_sec;
+          recalcRefill();
+        }
+      }
       if (msg.stats)  updateStats(msg.stats);
       if (msg.events) msg.events.forEach(addEventRow);
       renderValidModels();
@@ -822,7 +829,7 @@ function addEventRow(ev) {
   const result = (ev.result || '').toUpperCase();
   const cls    = result === 'OK' ? 'ok' : result === 'NG' ? 'ng' : 'error';
   if (ev.cycle) dom.statCyc.textContent = ev.cycle.toFixed(1);
-  updateRefillOnEvent();
+  updateRefillOnEvent(ev);
 
   const row = document.createElement('div');
   row.className = `log-row ${cls}`;
@@ -1018,9 +1025,11 @@ function recalcRefill() {
   renderRefill();
 }
 
-function updateRefillOnEvent() {
+function updateRefillOnEvent(ev) {
+  // [K-UI-1] Ưu tiên ev.cycle từ server (chu kỳ thực tế máy Laser).
+  // Fallback về input chỉ khi server chưa gửi cycle (e.g. manual_ok).
+  const cycle = (ev && ev.cycle > 0) ? ev.cycle : (parseFloat(dom.cycleInput.value) || 8);
   if (State.refillTotal <= 0) recalcRefill();
-  const cycle = parseFloat(dom.cycleInput.value) || 8;
   State.refillRemain = Math.max(0, State.refillRemain - cycle);
   if (State.refillRemain <= 0) {
     State.refillRemain = State.refillTotal;
@@ -1255,7 +1264,7 @@ const AGV = (() => {
     const ngRate = total > 0 ? ng / total * 100 : 0;
     addEventRow({ ts: new Date().toLocaleString('vi-VN'), line: 'demo' + Math.floor(Math.random()*3+1), model, result, cycle, source: 'demo' });
     updateStats({ total_ok: ok, total_ng: ng, total_error: 0, ng_rate_pct: +ngRate.toFixed(2) });
-    updateRefillOnEvent();
+    // updateRefillOnEvent đã được gọi bên trong addEventRow — không gọi lại ở đây
     if (ngRate >= (State.config.ng_threshold_pct || 3) && total >= 10) triggerNgAlert();
     else if (result !== 'NG') clearAlert();
   }, (parseFloat(dom.cycleInput.value) || 8) * 1000);
